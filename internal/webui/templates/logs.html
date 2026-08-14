@@ -1,0 +1,61 @@
+{{define "logs.html"}}
+{{template "head" .}}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Audit log search</h2>
+      <p>Times are interpreted using the server timezone. Results are shown 200 per page.</p>
+    </div>
+  </div>
+
+  <form class="filters" method="get" action="/web/logs">
+    <select name="event">
+      <option value="">All events</option>
+      <option value="config-sync" {{if eq .AuditEvent "config-sync"}}selected{{end}}>Config sync</option>
+      <option value="reserve" {{if eq .AuditEvent "reserve"}}selected{{end}}>Reserve</option>
+      <option value="confirm" {{if eq .AuditEvent "confirm"}}selected{{end}}>Confirm</option>
+      <option value="release" {{if eq .AuditEvent "release"}}selected{{end}}>Release</option>
+    </select>
+    <input name="board" value="{{.Board}}" placeholder="Board or alias">
+    <input name="mac" value="{{.AuditMAC}}" placeholder="MAC">
+    <input name="uuid" value="{{.AuditUUID}}" placeholder="UUID">
+    <label class="time-filter">From <input type="datetime-local" name="from" value="{{.TimeFrom}}" step="60"></label>
+    <label class="time-filter">To <input type="datetime-local" name="to" value="{{.TimeTo}}" step="60"></label>
+    <button type="submit">Search</button>
+    <a class="button secondary" href="/web/logs">Reset</a>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Event</th><th>Board</th><th>MAC</th><th>UUID</th><th>Detail</th><th>Time</th></tr>
+      </thead>
+      <tbody>
+        {{range .Audit}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td>{{.Event}}</td>
+          <td>{{.Board}}</td>
+          <td><code>{{.MAC}}</code></td>
+          <td><code>{{.UUID}}</code></td>
+          <td>{{.Detail}}</td>
+          <td>{{.CreatedAt}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="empty">No matching audit records</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{if or .PreviousURL .NextURL}}
+  <div class="pagination">
+    {{if .PreviousURL}}<a class="button secondary" href="{{.PreviousURL}}">Previous</a>{{end}}
+    {{if .NextURL}}<a class="button secondary" href="{{.NextURL}}">Next</a>{{end}}
+  </div>
+  {{end}}
+</section>
+
+{{template "footer" .}}
+{{end}}

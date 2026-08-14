@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	schemaVersion      = 2
+	schemaVersion      = 3
 	databaseTimeLayout = "2006-01-02 15:04:05"
 )
 
@@ -73,6 +73,17 @@ type ListFilter struct {
 	Prefix string
 	State  string
 	Limit  int
+}
+
+type AuditFilter struct {
+	Event  string
+	Board  string
+	MAC    string
+	UUID   string
+	From   string
+	To     string
+	Limit  int
+	Offset int
 }
 
 func Open(ctx context.Context, path string, busyTimeoutMS int, timezone string) (*Store, error) {
@@ -150,6 +161,12 @@ func (s *Store) migrate(ctx context.Context) error {
 			detail TEXT,
 			created_at TEXT NOT NULL
 		)`,
+		`CREATE INDEX IF NOT EXISTS audit_log_event_created_idx
+			ON audit_log(event, created_at)`,
+		`CREATE INDEX IF NOT EXISTS audit_log_board_created_idx
+			ON audit_log(board, created_at)`,
+		`CREATE INDEX IF NOT EXISTS audit_log_created_idx
+			ON audit_log(created_at)`,
 		`CREATE TABLE IF NOT EXISTS allocation_requests (
 			request_id TEXT PRIMARY KEY,
 			board TEXT NOT NULL,
@@ -624,13 +641,50 @@ func (s *Store) List(ctx context.Context, filter ListFilter) ([]Allocation, erro
 }
 
 func (s *Store) RecentAudit(ctx context.Context, limit int) ([]AuditEvent, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
+	return s.ListAudit(ctx, AuditFilter{Limit: limit})
+}
+
+func (s *Store) ListAudit(ctx context.Context, filter AuditFilter) ([]AuditEvent, error) {
+	if filter.Limit <= 0 || filter.Limit > 1000 {
+		filter.Limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+
+	query := `
 		SELECT id, event, COALESCE(board, ''), COALESCE(mac_addr, ''),
 		       COALESCE(uuid, ''), COALESCE(detail, ''), created_at
-		FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
+		FROM audit_log WHERE 1 = 1`
+	var args []any
+	if filter.Event != "" {
+		query += ` AND event = ?`
+		args = append(args, filter.Event)
+	}
+	if filter.Board != "" {
+		query += ` AND board = ?`
+		args = append(args, filter.Board)
+	}
+	if filter.MAC != "" {
+		query += ` AND COALESCE(mac_addr, '') LIKE ?`
+		args = append(args, "%"+strings.ToLower(filter.MAC)+"%")
+	}
+	if filter.UUID != "" {
+		query += ` AND COALESCE(uuid, '') LIKE ?`
+		args = append(args, "%"+strings.ToLower(filter.UUID)+"%")
+	}
+	if filter.From != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, filter.From)
+	}
+	if filter.To != "" {
+		query += ` AND created_at <= ?`
+		args = append(args, filter.To)
+	}
+	query += ` ORDER BY id DESC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list audit log: %w", err)
 	}

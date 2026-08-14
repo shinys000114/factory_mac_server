@@ -143,6 +143,10 @@ MAC/UUID 검색, 상태 필터와 수동 반환을 사용할 수 있습니다.
 `/web/allocations`에서는 모든 prefix를 대상으로 보드, prefix, MAC/UUID와
 상태를 함께 검색할 수 있습니다.
 
+대시보드에는 최근 감사 로그 100개가 표시됩니다. `/web/logs`에서는 전체
+감사 로그를 페이지당 200개씩 조회하며 이벤트 타입, 보드, MAC, UUID와 시간
+범위로 필터링할 수 있습니다. 시간 범위는 `server.timezone` 기준입니다.
+
 `/web/config`에서 서버가 현재 사용 중인 `-config` TOML 파일을 편집할 수
 있습니다. 새 설정은 전체 parsing과 검증을 통과한 뒤 임시 파일과 rename을
 이용해 원자적으로 저장합니다. 보드와 prefix 변경은 SQLite에도 즉시

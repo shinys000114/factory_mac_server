@@ -50,6 +50,8 @@ tbody tr:hover { background: #f7fafc; }
 .summary strong { display: block; font-size: 18px; }
 .summary.range { grid-column: span 2; }
 .filters { margin-bottom: 14px; }
+.time-filter { display: flex; align-items: center; gap: 6px; color: #53606c; }
+.pagination { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .state { display: inline-block; padding: 2px 7px; border-radius: 10px; background: #edf1f4; font-size: 12px; }
 .state.reserved { background: #fff0bf; }
 .state.assigned { background: #dceefc; }

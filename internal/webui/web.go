@@ -12,13 +12,18 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"mac_server/internal/config"
 	"mac_server/internal/store"
 )
 
-const maxConfigSize = 256 * 1024
+const (
+	maxConfigSize = 256 * 1024
+	auditPageSize = 200
+)
 
 var (
 	//go:embed templates/*.html static/*
@@ -48,6 +53,13 @@ type pageData struct {
 	Pool        *store.PoolStats
 	Allocations []store.Allocation
 	Audit       []store.AuditEvent
+	AuditEvent  string
+	AuditMAC    string
+	AuditUUID   string
+	TimeFrom    string
+	TimeTo      string
+	PreviousURL string
+	NextURL     string
 	ConfigPath  string
 	ConfigText  string
 	BackupDir   string
@@ -79,6 +91,7 @@ func (ui *UI) Handler() http.Handler {
 	mux.Handle("GET /web/static/", http.StripPrefix("/web/static/", ui.static))
 	mux.HandleFunc("GET /web/", ui.dashboard)
 	mux.HandleFunc("GET /web/allocations", ui.allocations)
+	mux.HandleFunc("GET /web/logs", ui.logs)
 	mux.HandleFunc("GET /web/pools/{prefix}", ui.poolDetails)
 	mux.HandleFunc("POST /web/release", ui.release)
 	mux.HandleFunc("GET /web/config", ui.configEditor)
@@ -139,6 +152,81 @@ func (ui *UI) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ui.render(w, http.StatusOK, "dashboard.html", data)
+}
+
+func (ui *UI) logs(w http.ResponseWriter, r *http.Request) {
+	data, err := ui.baseData(w, r, "Audit log")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data.AuditEvent = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("event")))
+	data.Board = strings.TrimSpace(r.URL.Query().Get("board"))
+	data.AuditMAC = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mac")))
+	data.AuditUUID = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("uuid")))
+	data.TimeFrom = strings.TrimSpace(r.URL.Query().Get("from"))
+	data.TimeTo = strings.TrimSpace(r.URL.Query().Get("to"))
+
+	filter := store.AuditFilter{
+		Event: data.AuditEvent,
+		MAC:   data.AuditMAC,
+		UUID:  data.AuditUUID,
+		Limit: auditPageSize + 1,
+	}
+	switch data.AuditEvent {
+	case "", "config-sync", "reserve", "confirm", "release":
+	default:
+		data.Error = "unknown audit event: " + data.AuditEvent
+	}
+	if data.Board != "" {
+		board, ok := ui.configs.ResolveBoard(data.Board)
+		if !ok {
+			data.Error = "unknown board: " + data.Board
+		} else {
+			filter.Board = board
+		}
+	}
+
+	timezone := ui.configs.Get().Server.Timezone
+	filter.From, err = auditTime(data.TimeFrom, timezone, false)
+	if err != nil {
+		data.Error = "invalid start time: " + err.Error()
+	}
+	filter.To, err = auditTime(data.TimeTo, timezone, true)
+	if err != nil {
+		data.Error = "invalid end time: " + err.Error()
+	}
+	if filter.From != "" && filter.To != "" && filter.From > filter.To {
+		data.Error = "start time must not be later than end time"
+	}
+
+	page := 1
+	if value := r.URL.Query().Get("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			data.Error = "page must be a positive number"
+			page = 1
+		}
+	}
+	filter.Offset = (page - 1) * auditPageSize
+
+	if data.Error == "" {
+		data.Audit, err = ui.store.ListAudit(r.Context(), filter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(data.Audit) > auditPageSize {
+			data.Audit = data.Audit[:auditPageSize]
+			data.NextURL = auditPageURL(r, page+1)
+		}
+		if page > 1 {
+			data.PreviousURL = auditPageURL(r, page-1)
+		}
+	}
+
+	ui.render(w, http.StatusOK, "logs.html", data)
 }
 
 func (ui *UI) poolDetails(w http.ResponseWriter, r *http.Request) {
@@ -330,4 +418,35 @@ func addQuery(path, key, value string) string {
 		separator = "&"
 	}
 	return path + separator + url.QueryEscape(key) + "=" + url.QueryEscape(value)
+}
+
+func auditTime(value, timezone string, endOfMinute bool) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := time.ParseInLocation("2006-01-02T15:04", value, location)
+	if err != nil {
+		return "", fmt.Errorf("use YYYY-MM-DD HH:MM")
+	}
+	if endOfMinute {
+		parsed = parsed.Add(time.Minute - time.Second)
+	}
+	return parsed.Format("2006-01-02 15:04:05"), nil
+}
+
+func auditPageURL(r *http.Request, page int) string {
+	query := r.URL.Query()
+	if page <= 1 {
+		query.Del("page")
+	} else {
+		query.Set("page", strconv.Itoa(page))
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return "/web/logs?" + encoded
+	}
+	return "/web/logs"
 }
