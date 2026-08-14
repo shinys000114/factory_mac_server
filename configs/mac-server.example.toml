@@ -1,5 +1,5 @@
 [server]
-listen = "127.0.0.1:8881"
+listen = "0.0.0.0:8881"
 timezone = "Asia/Seoul"
 read_timeout_seconds = 10
 write_timeout_seconds = 15
