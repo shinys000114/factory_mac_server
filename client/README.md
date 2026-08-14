@@ -44,6 +44,34 @@ macctl            예제 유틸리티
 의사 코드로 정리되어 있습니다. 이 파일의 보드 저장 함수는 구현되지 않았으며
 `Makefile`의 컴파일 대상이 아닙니다.
 
+ODROID-R1의 `/sys/class/efuse/` 인터페이스를 사용하는 구체적인 예제는
+[`examples/borad_provision_r1.c`](examples/borad_provision_r1.c)에 있습니다.
+요청한 파일명을 따라 `borad`로 작성했으며 이 파일도 기본 `Makefile`의
+컴파일 대상에는 포함하지 않았습니다.
+
+`client` 디렉터리에서 라이브러리를 먼저 빌드한 뒤 R1 예제만 수동으로
+컴파일할 수 있습니다.
+
+```sh
+make library
+
+cc -O2 -g -Wall -Wextra -Werror -Iinclude \
+  $(pkg-config --cflags libcurl) \
+  examples/borad_provision_r1.c libmacclient.a \
+  $(pkg-config --libs libcurl) \
+  -o borad_provision_r1
+```
+
+R1 대상 장치에서 실행하는 형식은 다음과 같습니다.
+
+```sh
+sudo ./borad_provision_r1 -s http://MAC_SERVER_ADDRESS:8881
+```
+
+이 프로그램은 `/sys/class/efuse/uuid`에 UUID를 기록하며 실패 복구 과정에서
+`/sys/class/efuse/clear`를 사용할 수 있습니다. 반드시 R1 생산 대상 장치와
+올바른 서버 주소를 확인한 후 실행해야 합니다.
+
 ## C 라이브러리
 
 헤더:
