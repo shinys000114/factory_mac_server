@@ -67,7 +67,7 @@ API:    http://127.0.0.1:8881
 Web UI: http://127.0.0.1:8082/web/
 ```
 
-## API 호환성
+## 기존 장비 호환 API
 
 기존 `lib_mac` 호환을 위해 다음 경로를 제공합니다.
 
@@ -81,6 +81,30 @@ Web UI: http://127.0.0.1:8082/web/
 dummy 응답을 반환하며, `Authorization` 헤더는 전달되어도 무시합니다. 토큰은
 DB에 저장하지 않습니다. 그 외 응답에도 기존 클라이언트 파싱을 위해
 호환용 `auth` 객체를 포함합니다.
+
+이 경로들은 기존 장비 전용입니다. 신규 `libmacclient`와 `macctl`은 아래의
+`/api/v1/*`를 사용합니다.
+
+## 신규 API v1
+
+신규 클라이언트용 API는 다음 경로를 제공합니다.
+
+- `POST /api/v1/allocations`: MAC/UUID 예약
+- `POST /api/v1/allocations/{mac}/confirm`: 할당 확정
+- `POST /api/v1/allocations/{mac}/release`: 예약 또는 할당 반환
+- `POST /api/v1/allocations/{mac}/availability`: 사용 가능 여부 확인
+- `GET /api/v1/allocations`: 할당 검색
+- `GET /api/v1/pools`: 전체 prefix 통계
+- `GET /api/v1/pools/{prefix}`: 단일 prefix 통계
+- `GET /api/v1/version`: API 버전
+
+v1 API는 HTTP 상태 코드와 `error.code`, `error.message`를 사용합니다. 예약
+요청에는 UUID 형식의 `request_id`가 필요합니다. 같은 `request_id`를 다시
+보내면 새 MAC을 소비하지 않고 기존 예약 결과를 반환합니다.
+
+`libmacclient`는 request ID를 내부에서 생성하므로 일반 사용자가 직접 관리할
+필요는 없습니다. confirm과 release도 같은 요청을 반복해도 성공하도록
+멱등 처리합니다.
 
 할당 상태 전환은 다음과 같습니다.
 
@@ -111,6 +135,8 @@ Web UI는 `/web/`에서 제공합니다. `web.listen`이 비어 있으면 API li
 
 prefix를 선택하면 해당 대역 상세 화면으로 이동합니다. 상세 화면에서는
 MAC/UUID 검색, 상태 필터와 수동 반환을 사용할 수 있습니다.
+`/web/allocations`에서는 모든 prefix를 대상으로 보드, prefix, MAC/UUID와
+상태를 함께 검색할 수 있습니다.
 
 `/web/config`에서 서버가 현재 사용 중인 `-config` TOML 파일을 편집할 수
 있습니다. 새 설정은 전체 parsing과 검증을 통과한 뒤 임시 파일과 rename을
@@ -135,7 +161,9 @@ internal/webui/static/
 ## C 클라이언트와 macctl
 
 `client/`에는 libcurl 기반 C 라이브러리와 `macctl` 예제가 있습니다. 신규
-클라이언트는 호환용 login API를 호출하지 않습니다.
+클라이언트는 `/api/v1/*`만 사용하며 호환용 login API를 호출하지 않습니다.
+예약 요청 중 응답이 유실되면 라이브러리가 동일한 내부 request ID를 사용해
+최대 3회 재시도하므로 중복 MAC 할당을 방지할 수 있습니다.
 
 일반적인 생산 흐름:
 
@@ -174,7 +202,7 @@ client/macctl
 ./client/macctl -s http://127.0.0.1:8881 request r1
 ./client/macctl -s http://127.0.0.1:8881 confirm r1 001e065e0001 12345678-1234-4234-8234-001e065e0001
 ./client/macctl -s http://127.0.0.1:8881 release r1 001e065e0001
-./client/macctl -s http://127.0.0.1:8881 verify r1 001e065e0001
+./client/macctl -s http://127.0.0.1:8881 available r1 001e065e0001
 ```
 
 C 라이브러리와 `macctl`의 자세한 사용법은

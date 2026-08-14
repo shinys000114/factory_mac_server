@@ -41,6 +41,8 @@ type pageData struct {
 	Message     string
 	Error       string
 	Query       string
+	Board       string
+	Prefix      string
 	State       string
 	PoolStats   []store.PoolStats
 	Pool        *store.PoolStats
@@ -76,12 +78,52 @@ func (ui *UI) Handler() http.Handler {
 	mux.Handle("GET /favicon.ico", ui.static)
 	mux.Handle("GET /web/static/", http.StripPrefix("/web/static/", ui.static))
 	mux.HandleFunc("GET /web/", ui.dashboard)
+	mux.HandleFunc("GET /web/allocations", ui.allocations)
 	mux.HandleFunc("GET /web/pools/{prefix}", ui.poolDetails)
 	mux.HandleFunc("POST /web/release", ui.release)
 	mux.HandleFunc("GET /web/config", ui.configEditor)
 	mux.HandleFunc("POST /web/config", ui.saveConfig)
 	mux.HandleFunc("POST /web/backup", ui.backup)
 	return mux
+}
+
+func (ui *UI) allocations(w http.ResponseWriter, r *http.Request) {
+	data, err := ui.baseData(w, r, "Allocation search")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data.Query = strings.TrimSpace(r.URL.Query().Get("q"))
+	data.Board = strings.TrimSpace(r.URL.Query().Get("board"))
+	data.Prefix = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("prefix")))
+	data.State = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
+
+	filter := store.ListFilter{
+		Query: data.Query, Prefix: data.Prefix, State: data.State, Limit: 500,
+	}
+	if data.Board != "" {
+		board, ok := ui.configs.ResolveBoard(data.Board)
+		if !ok {
+			data.Error = "unknown board: " + data.Board
+		} else {
+			filter.Board = board
+		}
+	}
+	if data.Prefix != "" && !prefixPattern.MatchString(data.Prefix) {
+		data.Error = "prefix must be exactly 8 hexadecimal characters"
+	}
+	if data.State != "" && data.State != "reserved" &&
+		data.State != "assigned" && data.State != "released" {
+		data.Error = "unknown allocation state: " + data.State
+	}
+	if data.Error == "" {
+		data.Allocations, err = ui.store.List(r.Context(), filter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	ui.render(w, http.StatusOK, "allocations.html", data)
 }
 
 func (ui *UI) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +309,8 @@ func validCSRF(r *http.Request) bool {
 }
 
 func safeReturnPath(value string) string {
-	if strings.HasPrefix(value, "/web/pools/") || value == "/web/" {
+	if strings.HasPrefix(value, "/web/pools/") ||
+		strings.HasPrefix(value, "/web/allocations") || value == "/web/" {
 		return value
 	}
 	return "/web/"

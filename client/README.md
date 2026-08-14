@@ -4,6 +4,9 @@
 C 라이브러리입니다. `macctl`은 라이브러리 사용 예제이자 수동 확인용
 명령행 유틸리티입니다.
 
+라이브러리는 신규 `/api/v1/*` API를 사용합니다. 기존 장비용 `/restapi/*`
+호환 API나 login API는 사용하지 않습니다.
+
 ## 빌드
 
 필요 항목:
@@ -35,6 +38,11 @@ libmacclient.a    정적 라이브러리
 libmacclient.so   공유 라이브러리
 macctl            예제 유틸리티
 ```
+
+실제 생산 프로그램의 권장 흐름은
+[`examples/board_provision_pseudo.c`](examples/board_provision_pseudo.c)에
+의사 코드로 정리되어 있습니다. 이 파일의 보드 저장 함수는 구현되지 않았으며
+`Makefile`의 컴파일 대상이 아닙니다.
 
 ## C 라이브러리
 
@@ -96,6 +104,16 @@ mac_client_global_cleanup();
 
 반환값은 성공 시 `MAC_CLIENT_OK(0)`, 실패 시 음수입니다.
 
+`mac_client_request()`는 UUID 형식의 request ID를 내부에서 생성합니다.
+네트워크 응답이 유실되면 같은 request ID로 최대 3회 재시도하므로 서버는
+새 MAC을 추가로 할당하지 않고 동일한 예약을 반환합니다. 사용자는 request
+ID를 생성하거나 함수에 전달할 필요가 없습니다.
+
+호출이 네트워크 오류로 끝난 경우 request ID는 `struct mac_client`에 남아
+다음 `mac_client_request()` 호출에서 다시 사용됩니다. 해당 요청을 완전히
+포기하고 다른 작업을 시작하려면 `mac_client_init()`으로 객체를 다시
+초기화할 수 있습니다.
+
 직접 링크하는 예:
 
 ```sh
@@ -139,7 +157,7 @@ uuid=f42c901b-4cec-4a44-9272-001e065e0001
 사용 가능 여부 확인:
 
 ```sh
-./macctl -s http://127.0.0.1:8881 verify r1 001e065e0001
+./macctl -s http://127.0.0.1:8881 available r1 001e065e0001
 ```
 
 ```text

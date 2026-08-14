@@ -15,14 +15,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 var (
-	ErrNoAddress    = errors.New("no more available MAC addresses")
-	ErrNotFound     = errors.New("MAC address was not found")
-	ErrInvalidState = errors.New("MAC address is not reserved")
-	ErrUUIDMismatch = errors.New("UUID does not match the reserved address")
-	ErrPoolMismatch = errors.New("MAC address does not belong to the board")
+	ErrNoAddress       = errors.New("no more available MAC addresses")
+	ErrNotFound        = errors.New("MAC address was not found")
+	ErrInvalidState    = errors.New("MAC address is not reserved")
+	ErrUUIDMismatch    = errors.New("UUID does not match the reserved address")
+	ErrPoolMismatch    = errors.New("MAC address does not belong to the board")
+	ErrRequestConflict = errors.New("request ID is already used by another allocation")
 )
 
 type Store struct {
@@ -30,26 +31,26 @@ type Store struct {
 }
 
 type Allocation struct {
-	MAC        string
-	Board      string
-	Prefix     string
-	Suffix     int
-	State      string
-	UUID       string
-	ReservedAt string
-	AssignedAt string
-	UpdatedAt  string
+	MAC        string `json:"mac"`
+	Board      string `json:"board"`
+	Prefix     string `json:"prefix"`
+	Suffix     int    `json:"suffix"`
+	State      string `json:"state"`
+	UUID       string `json:"uuid"`
+	ReservedAt string `json:"reserved_at"`
+	AssignedAt string `json:"assigned_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 type PoolStats struct {
-	Board      string
-	Prefix     string
-	RangeStart string
-	RangeEnd   string
-	Total      int
-	Free       int
-	Reserved   int
-	Assigned   int
+	Board      string `json:"board"`
+	Prefix     string `json:"prefix"`
+	RangeStart string `json:"range_start"`
+	RangeEnd   string `json:"range_end"`
+	Total      int    `json:"total"`
+	Free       int    `json:"free"`
+	Reserved   int    `json:"reserved"`
+	Assigned   int    `json:"assigned"`
 }
 
 type AuditEvent struct {
@@ -140,6 +141,16 @@ func (s *Store) migrate(ctx context.Context) error {
 			detail TEXT,
 			created_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS allocation_requests (
+			request_id TEXT PRIMARY KEY,
+			board TEXT NOT NULL,
+			mac_addr TEXT NOT NULL,
+			uuid TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			FOREIGN KEY(mac_addr) REFERENCES allocations(mac_addr)
+		)`,
+		`CREATE INDEX IF NOT EXISTS allocation_requests_mac_idx
+			ON allocation_requests(mac_addr)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)`,
 	}
 
@@ -207,6 +218,17 @@ func (s *Store) SyncConfig(ctx context.Context, pools []config.Pool) error {
 }
 
 func (s *Store) Allocate(ctx context.Context, board string) (Allocation, error) {
+	return s.allocate(ctx, board, "")
+}
+
+func (s *Store) AllocateWithRequestID(ctx context.Context, board, requestID string) (Allocation, error) {
+	if requestID == "" {
+		return Allocation{}, fmt.Errorf("request ID must not be empty")
+	}
+	return s.allocate(ctx, board, requestID)
+}
+
+func (s *Store) allocate(ctx context.Context, board, requestID string) (Allocation, error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return Allocation{}, fmt.Errorf("get sqlite connection: %w", err)
@@ -222,6 +244,20 @@ func (s *Store) Allocate(ctx context.Context, board string) (Allocation, error) 
 		}
 	}()
 
+	if requestID != "" {
+		allocation, found, err := allocationByRequestID(ctx, conn, board, requestID)
+		if err != nil {
+			return Allocation{}, err
+		}
+		if found {
+			if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+				return Allocation{}, fmt.Errorf("commit idempotent allocation: %w", err)
+			}
+			committed = true
+			return allocation, nil
+		}
+	}
+
 	allocation, err := allocateReleased(ctx, conn, board)
 	if errors.Is(err, sql.ErrNoRows) {
 		allocation, err = allocateNew(ctx, conn, board)
@@ -229,9 +265,17 @@ func (s *Store) Allocate(ctx context.Context, board string) (Allocation, error) 
 	if err != nil {
 		return Allocation{}, err
 	}
+	if requestID != "" {
+		if _, err := conn.ExecContext(ctx, `
+			INSERT INTO allocation_requests(request_id, board, mac_addr, uuid, created_at)
+			VALUES(?, ?, ?, ?, ?)`, requestID, board, allocation.MAC, allocation.UUID, now()); err != nil {
+			return Allocation{}, fmt.Errorf("save allocation request ID: %w", err)
+		}
+	}
 	if _, err := conn.ExecContext(ctx, `
-		INSERT INTO audit_log(event, board, mac_addr, uuid, created_at)
-		VALUES('reserve', ?, ?, ?, ?)`, board, allocation.MAC, allocation.UUID, now()); err != nil {
+		INSERT INTO audit_log(event, board, mac_addr, uuid, detail, created_at)
+		VALUES('reserve', ?, ?, ?, NULLIF(?, ''), ?)`,
+		board, allocation.MAC, allocation.UUID, requestID, now()); err != nil {
 		return Allocation{}, fmt.Errorf("write allocation audit log: %w", err)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
@@ -239,6 +283,39 @@ func (s *Store) Allocate(ctx context.Context, board string) (Allocation, error) 
 	}
 	committed = true
 	return allocation, nil
+}
+
+func allocationByRequestID(ctx context.Context, conn *sql.Conn, board, requestID string) (Allocation, bool, error) {
+	var requestBoard string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT board FROM allocation_requests WHERE request_id = ?`, requestID).Scan(&requestBoard); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Allocation{}, false, nil
+		}
+		return Allocation{}, false, fmt.Errorf("read allocation request ID: %w", err)
+	}
+	if requestBoard != board {
+		return Allocation{}, false, ErrRequestConflict
+	}
+
+	var allocation Allocation
+	err := conn.QueryRowContext(ctx, `
+		SELECT a.mac_addr, a.board, a.prefix, a.suffix, a.state,
+		       COALESCE(a.uuid, ''), COALESCE(a.reserved_at, ''),
+		       COALESCE(a.assigned_at, ''), a.updated_at
+		FROM allocation_requests r
+		JOIN allocations a ON a.mac_addr = r.mac_addr AND a.uuid = r.uuid
+		WHERE r.request_id = ? AND a.state IN ('reserved', 'assigned')`, requestID).Scan(
+		&allocation.MAC, &allocation.Board, &allocation.Prefix, &allocation.Suffix,
+		&allocation.State, &allocation.UUID, &allocation.ReservedAt,
+		&allocation.AssignedAt, &allocation.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Allocation{}, false, ErrRequestConflict
+	}
+	if err != nil {
+		return Allocation{}, false, fmt.Errorf("read idempotent allocation: %w", err)
+	}
+	return allocation, true, nil
 }
 
 func allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Allocation, error) {
@@ -252,6 +329,10 @@ func allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Alloca
 		LIMIT 1`, board).Scan(&allocation.MAC, &allocation.Board, &allocation.Prefix, &allocation.Suffix)
 	if err != nil {
 		return Allocation{}, err
+	}
+	if _, err := conn.ExecContext(ctx,
+		`DELETE FROM allocation_requests WHERE mac_addr = ?`, allocation.MAC); err != nil {
+		return Allocation{}, fmt.Errorf("remove previous allocation request ID: %w", err)
 	}
 
 	uuid, err := uuidForMAC(allocation.MAC)
@@ -364,12 +445,30 @@ func (s *Store) changeState(ctx context.Context, board, mac, uuid, target string
 		if uuid != "" && !strings.EqualFold(uuid, currentUUID) {
 			return ErrUUIDMismatch
 		}
+		if currentState == "assigned" {
+			if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+				return fmt.Errorf("commit idempotent confirmation: %w", err)
+			}
+			committed = true
+			return nil
+		}
 		if _, err := conn.ExecContext(ctx, `
 			UPDATE allocations SET state = 'assigned', assigned_at = COALESCE(assigned_at, ?), updated_at = ?
 			WHERE mac_addr = ? AND board = ?`, timestamp, timestamp, mac, board); err != nil {
 			return fmt.Errorf("confirm allocation: %w", err)
 		}
 	case "released":
+		if _, err := conn.ExecContext(ctx,
+			`DELETE FROM allocation_requests WHERE mac_addr = ?`, mac); err != nil {
+			return fmt.Errorf("remove allocation request ID: %w", err)
+		}
+		if currentState == "released" {
+			if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+				return fmt.Errorf("commit idempotent release: %w", err)
+			}
+			committed = true
+			return nil
+		}
 		if _, err := conn.ExecContext(ctx, `
 			UPDATE allocations
 			SET state = 'released', uuid = NULL, reserved_at = NULL, assigned_at = NULL, updated_at = ?

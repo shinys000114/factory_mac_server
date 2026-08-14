@@ -1,0 +1,63 @@
+{{define "allocations.html"}}
+{{template "head" .}}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Allocation records</h2>
+      <p>Search the latest 500 matching MAC/UUID allocation records across all pools.</p>
+    </div>
+  </div>
+
+  <form class="filters" method="get" action="/web/allocations">
+    <input name="q" value="{{.Query}}" placeholder="MAC or UUID">
+    <input name="board" value="{{.Board}}" placeholder="Board or alias">
+    <input name="prefix" value="{{.Prefix}}" placeholder="8-digit prefix">
+    <select name="state">
+      <option value="">All states</option>
+      <option value="reserved" {{if eq .State "reserved"}}selected{{end}}>Reserved</option>
+      <option value="assigned" {{if eq .State "assigned"}}selected{{end}}>Assigned</option>
+      <option value="released" {{if eq .State "released"}}selected{{end}}>Released</option>
+    </select>
+    <button type="submit">Search</button>
+    <a class="button secondary" href="/web/allocations">Reset</a>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Board</th><th>Prefix</th><th>MAC</th><th>UUID</th><th>State</th><th>Reserved</th><th>Assigned</th><th>Updated</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range .Allocations}}
+        <tr>
+          <td>{{.Board}}</td>
+          <td><a href="/web/pools/{{.Prefix}}"><code>{{.Prefix}}</code></a></td>
+          <td><code>{{.MAC}}</code></td>
+          <td><code>{{.UUID}}</code></td>
+          <td><span class="state {{.State}}">{{.State}}</span></td>
+          <td>{{.ReservedAt}}</td>
+          <td>{{.AssignedAt}}</td>
+          <td>{{.UpdatedAt}}</td>
+          <td>
+            {{if ne .State "released"}}
+            <form method="post" action="/web/release" onsubmit="return confirm('Release {{.MAC}}?')">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="board" value="{{.Board}}">
+              <input type="hidden" name="mac_addr" value="{{.MAC}}">
+              <input type="hidden" name="return_to" value="/web/allocations">
+              <button class="danger" type="submit">Release</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="empty">No matching allocation records</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{template "footer" .}}
+{{end}}

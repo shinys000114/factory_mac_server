@@ -11,7 +11,7 @@ static void usage(const char *program)
 		"  %s -s URL request BOARD\n"
 		"  %s -s URL confirm BOARD MAC UUID\n"
 		"  %s -s URL release BOARD MAC\n"
-		"  %s -s URL verify BOARD MAC\n",
+		"  %s -s URL available BOARD MAC\n",
 		program, program, program, program);
 }
 
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 		status = mac_client_release(&client, argv[4], argv[5]);
 		if (status == MAC_CLIENT_OK)
 			puts("released");
-	} else if (strcmp(command, "verify") == 0 && argc == 6) {
+	} else if (strcmp(command, "available") == 0 && argc == 6) {
 		status = mac_client_is_available(&client, argv[4], argv[5],
 					 &available);
 		if (status == MAC_CLIENT_OK)

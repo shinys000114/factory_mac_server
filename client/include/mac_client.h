@@ -43,6 +43,9 @@
  * mac_client_request()는 주소를 예약만 한다. 보드 기록 성공 시에는 반드시
  * mac_client_confirm()을 호출하고, 실패 시에는 mac_client_release()를 호출해
  * 예약을 반환해야 한다.
+ *
+ * 라이브러리는 신규 /api/v1 API를 사용한다. request ID는 내부에서 생성하며,
+ * 네트워크 오류 시 같은 ID로 재시도하므로 사용자가 별도로 관리하지 않는다.
  */
 
 #ifdef __cplusplus
@@ -83,6 +86,8 @@ struct mac_client {
 	long timeout_ms;
 	/** 가장 최근 실패 원인을 담는 내부 버퍼이다. */
 	char error[256];
+	/** 응답 유실 시 같은 할당을 다시 요청하기 위한 내부 request ID이다. */
+	char request_id[37];
 };
 
 /** 서버가 예약한 MAC 주소와 UUID 한 쌍이다. */
@@ -151,7 +156,8 @@ int mac_client_request(struct mac_client *client, const char *board,
  * 예약된 MAC/UUID를 최종 할당 상태로 확정한다.
  *
  * request에서 반환된 board와 result를 변경하지 않고 전달해야 한다.
- * 이미 확정했거나 반환한 주소, 서로 일치하지 않는 MAC/UUID는 실패한다.
+ * 동일한 MAC/UUID의 confirm을 반복해도 성공한다. 이미 반환한 주소 또는
+ * 서로 일치하지 않는 MAC/UUID는 실패한다.
  *
  * @param client 초기화된 클라이언트 객체
  * @param board request에 사용한 보드명 또는 alias

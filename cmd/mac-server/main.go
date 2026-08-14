@@ -57,6 +57,7 @@ func run(configPath string) error {
 
 	apiMux := http.NewServeMux()
 	apiMux.Handle("/restapi/", api.Handler())
+	apiMux.Handle("/api/v1/", api.V1Handler())
 	apiMux.Handle("/healthz", api.Handler())
 	if cfg.Web.Listen == "" {
 		apiMux.Handle("/", web.Handler())
