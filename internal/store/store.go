@@ -15,7 +15,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const (
+	schemaVersion      = 2
+	databaseTimeLayout = "2006-01-02 15:04:05"
+)
 
 var (
 	ErrNoAddress       = errors.New("no more available MAC addresses")
@@ -27,7 +30,8 @@ var (
 )
 
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	location *time.Location
 }
 
 type Allocation struct {
@@ -71,7 +75,12 @@ type ListFilter struct {
 	Limit  int
 }
 
-func Open(ctx context.Context, path string, busyTimeoutMS int) (*Store, error) {
+func Open(ctx context.Context, path string, busyTimeoutMS int, timezone string) (*Store, error) {
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, fmt.Errorf("load timezone %q: %w", timezone, err)
+	}
+
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
@@ -92,7 +101,7 @@ func Open(ctx context.Context, path string, busyTimeoutMS int) (*Store, error) {
 		}
 	}
 
-	s := &Store{db: db}
+	s := &Store{db: db, location: location}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -162,7 +171,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for i, statement := range statements {
 		var execErr error
 		if i == len(statements)-1 {
-			_, execErr = tx.ExecContext(ctx, statement, schemaVersion, now())
+			_, execErr = tx.ExecContext(ctx, statement, schemaVersion, s.now())
 		} else {
 			_, execErr = tx.ExecContext(ctx, statement)
 		}
@@ -183,7 +192,7 @@ func (s *Store) SyncConfig(ctx context.Context, pools []config.Pool) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `UPDATE pools SET enabled = 0, updated_at = ?`, now()); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE pools SET enabled = 0, updated_at = ?`, s.now()); err != nil {
 		return fmt.Errorf("disable old pools: %w", err)
 	}
 	for _, pool := range pools {
@@ -202,13 +211,13 @@ func (s *Store) SyncConfig(ctx context.Context, pools []config.Pool) error {
 				priority = excluded.priority,
 				enabled = 1,
 				updated_at = excluded.updated_at`,
-			pool.Prefix, pool.Board, pool.Priority, now()); err != nil {
+			pool.Prefix, pool.Board, pool.Priority, s.now()); err != nil {
 			return fmt.Errorf("sync pool %s: %w", pool.Prefix, err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO audit_log(event, detail, created_at)
-		VALUES('config-sync', ?, ?)`, fmt.Sprintf("enabled pools: %d", len(pools)), now()); err != nil {
+		VALUES('config-sync', ?, ?)`, fmt.Sprintf("enabled pools: %d", len(pools)), s.now()); err != nil {
 		return fmt.Errorf("write config audit log: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -258,9 +267,9 @@ func (s *Store) allocate(ctx context.Context, board, requestID string) (Allocati
 		}
 	}
 
-	allocation, err := allocateReleased(ctx, conn, board)
+	allocation, err := s.allocateReleased(ctx, conn, board)
 	if errors.Is(err, sql.ErrNoRows) {
-		allocation, err = allocateNew(ctx, conn, board)
+		allocation, err = s.allocateNew(ctx, conn, board)
 	}
 	if err != nil {
 		return Allocation{}, err
@@ -268,14 +277,14 @@ func (s *Store) allocate(ctx context.Context, board, requestID string) (Allocati
 	if requestID != "" {
 		if _, err := conn.ExecContext(ctx, `
 			INSERT INTO allocation_requests(request_id, board, mac_addr, uuid, created_at)
-			VALUES(?, ?, ?, ?, ?)`, requestID, board, allocation.MAC, allocation.UUID, now()); err != nil {
+			VALUES(?, ?, ?, ?, ?)`, requestID, board, allocation.MAC, allocation.UUID, s.now()); err != nil {
 			return Allocation{}, fmt.Errorf("save allocation request ID: %w", err)
 		}
 	}
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO audit_log(event, board, mac_addr, uuid, detail, created_at)
 		VALUES('reserve', ?, ?, ?, NULLIF(?, ''), ?)`,
-		board, allocation.MAC, allocation.UUID, requestID, now()); err != nil {
+		board, allocation.MAC, allocation.UUID, requestID, s.now()); err != nil {
 		return Allocation{}, fmt.Errorf("write allocation audit log: %w", err)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
@@ -318,7 +327,7 @@ func allocationByRequestID(ctx context.Context, conn *sql.Conn, board, requestID
 	return allocation, true, nil
 }
 
-func allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Allocation, error) {
+func (s *Store) allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Allocation, error) {
 	var allocation Allocation
 	err := conn.QueryRowContext(ctx, `
 		SELECT a.mac_addr, a.board, a.prefix, a.suffix
@@ -339,7 +348,7 @@ func allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Alloca
 	if err != nil {
 		return Allocation{}, err
 	}
-	timestamp := now()
+	timestamp := s.now()
 	result, err := conn.ExecContext(ctx, `
 		UPDATE allocations
 		SET state = 'reserved', uuid = ?, reserved_at = ?, assigned_at = NULL, updated_at = ?
@@ -357,7 +366,7 @@ func allocateReleased(ctx context.Context, conn *sql.Conn, board string) (Alloca
 	return allocation, nil
 }
 
-func allocateNew(ctx context.Context, conn *sql.Conn, board string) (Allocation, error) {
+func (s *Store) allocateNew(ctx context.Context, conn *sql.Conn, board string) (Allocation, error) {
 	var prefix string
 	var suffix int
 	err := conn.QueryRowContext(ctx, `
@@ -381,7 +390,7 @@ func allocateNew(ctx context.Context, conn *sql.Conn, board string) (Allocation,
 	if err != nil {
 		return Allocation{}, err
 	}
-	timestamp := now()
+	timestamp := s.now()
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO allocations(mac_addr, board, prefix, suffix, state, uuid, reserved_at, updated_at)
 		VALUES(?, ?, ?, ?, 'reserved', ?, ?, ?)`,
@@ -436,7 +445,7 @@ func (s *Store) changeState(ctx context.Context, board, mac, uuid, target string
 		return fmt.Errorf("read allocation: %w", err)
 	}
 
-	timestamp := now()
+	timestamp := s.now()
 	switch target {
 	case "assigned":
 		if currentState != "reserved" && currentState != "assigned" {
@@ -651,6 +660,6 @@ func uuidForMAC(mac string) (string, error) {
 	return uuid, nil
 }
 
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
+func (s *Store) now() string {
+	return time.Now().In(s.location).Format(databaseTimeLayout)
 }

@@ -113,9 +113,9 @@ HTTP API를 직접 사용하는 프로그램은 요청 결과가 확정될 때�
   "suffix": 1,
   "state": "reserved",
   "uuid": "f42c901b-4cec-4a44-9272-001e065e0001",
-  "reserved_at": "2026-08-14T03:00:00.000000000Z",
+  "reserved_at": "2026-08-14 14:10:11",
   "assigned_at": "",
-  "updated_at": "2026-08-14T03:00:00.000000000Z"
+  "updated_at": "2026-08-14 14:10:11"
 }
 ```
 
@@ -272,15 +272,16 @@ curl -sS \
       "suffix": 1,
       "state": "assigned",
       "uuid": "f42c901b-4cec-4a44-9272-001e065e0001",
-      "reserved_at": "2026-08-14T03:00:00Z",
-      "assigned_at": "2026-08-14T03:01:00Z",
-      "updated_at": "2026-08-14T03:01:00Z"
+      "reserved_at": "2026-08-14 14:10:11",
+      "assigned_at": "2026-08-14 14:11:03",
+      "updated_at": "2026-08-14 14:11:03"
     }
   ]
 }
 ```
 
 현재 목록은 `updated_at` 내림차순이며 최대 500개까지 반환합니다.
+시간 필드는 `server.timezone` 기준의 `YYYY-MM-DD HH:MM:SS` 형식입니다.
 
 ### 전체 prefix 통계
 

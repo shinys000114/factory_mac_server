@@ -39,7 +39,7 @@ func run(configPath string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	database, err := store.Open(ctx, cfg.Database.Path, cfg.Database.BusyTimeoutMS)
+	database, err := store.Open(ctx, cfg.Database.Path, cfg.Database.BusyTimeoutMS, cfg.Server.Timezone)
 	if err != nil {
 		return err
 	}

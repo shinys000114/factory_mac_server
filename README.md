@@ -16,6 +16,9 @@ DB와 백업 경로가 각각 `./data/mac-server.db`, `./data/backups`로 지정
 보드와 MAC 대역은 다음과 같이 설정합니다.
 
 ```toml
+[server]
+timezone = "Asia/Seoul"
+
 [boards.odroidr1]
 aliases = ["r1", "odroid-r1"]
 prefixes = ["001e065e", "001e065f"]
@@ -145,7 +148,7 @@ MAC/UUID 검색, 상태 필터와 수동 반환을 사용할 수 있습니다.
 이용해 원자적으로 저장합니다. 보드와 prefix 변경은 SQLite에도 즉시
 반영하며, DB 동기화가 실패하면 이전 TOML 파일을 복구합니다.
 
-listen 주소, Web listen 주소, DB 경로와 SQLite busy timeout은 프로세스
+listen 주소, 타임존, Web listen 주소, DB 경로와 SQLite busy timeout은 프로세스
 재시작이 필요한 값이므로 Web 편집기에서 실행 중 변경할 수 없습니다. Web
 저장을 사용하려면 서버 계정에 설정 파일과 상위 디렉터리 쓰기 권한이 있어야
 합니다.
