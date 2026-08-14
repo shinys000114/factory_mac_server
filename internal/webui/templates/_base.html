@@ -1,0 +1,33 @@
+{{define "head"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.Title}} - UUID / MAC Server</title>
+  <link rel="icon" type="image/x-icon" href="/web/static/favicon.ico">
+  <link rel="stylesheet" href="/web/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-content">
+      <a class="brand" href="/web/">UUID / MAC Server</a>
+      <nav>
+        <a href="/web/">Dashboard</a>
+        <a href="/web/config">TOML editor</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="page-heading">
+      <h1>{{.Title}}</h1>
+    </div>
+    {{if .Message}}<div class="notice success">{{.Message}}</div>{{end}}
+    {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+{{end}}
+
+{{define "footer"}}
+  </main>
+</body>
+</html>
+{{end}}

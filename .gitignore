@@ -1,0 +1,11 @@
+/mac-server
+/mac-server.toml
+/data/
+/*.db
+/*.db-shm
+/*.db-wal
+/client/*.a
+/client/*.so
+/client/macctl
+/client/src/*.o
+/client/examples/*.o

@@ -1,0 +1,32 @@
+{{define "config.html"}}
+{{template "head" .}}
+
+<p class="back-link"><a href="/web/">&larr; Dashboard</a></p>
+
+<section class="panel editor-panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Edit active TOML</h2>
+      <p>File: <code>{{.ConfigPath}}</code></p>
+    </div>
+  </div>
+
+  <div class="warning">
+    The complete TOML is validated before saving. Board and prefix changes apply immediately.
+    Listener, Web listener, database path, and busy-timeout changes require a server restart and
+    are rejected by this editor. The suffix range remains fixed at <code>0001-ffff</code>.
+  </div>
+
+  <form method="post" action="/web/config">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label for="toml">Configuration</label>
+    <textarea id="toml" name="toml" spellcheck="false" required>{{.ConfigText}}</textarea>
+    <div class="actions editor-actions">
+      <button type="submit">Validate, save and apply</button>
+      <a class="button secondary" href="/web/config">Discard changes</a>
+    </div>
+  </form>
+</section>
+
+{{template "footer" .}}
+{{end}}

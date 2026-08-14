@@ -1,0 +1,34 @@
+[server]
+listen = "127.0.0.1:8881"
+timezone = "Asia/Seoul"
+read_timeout_seconds = 10
+write_timeout_seconds = 15
+
+# Leave empty to serve the Web UI on server.listen.
+# For an unauthenticated management UI, localhost-only is recommended.
+[web]
+listen = "127.0.0.1:8082"
+
+[database]
+# Development default: paths are relative to the directory where the server is run.
+# No sudo or pre-created directory is required.
+path = "./data/mac-server.db"
+busy_timeout_ms = 5000
+backup_dir = "./data/backups"
+
+# Prefix order is allocation priority. The suffix range is always 0001-ffff.
+[boards.odroidr1]
+aliases = ["r1", "odroid-r1"]
+prefixes = ["001e065e", "001e065f"]
+
+[boards.odroidm1]
+aliases = ["m1", "odroid-m1"]
+prefixes = ["001e064e", "001e064f"]
+
+[boards.odroidm1s]
+aliases = ["m1s", "odroid-m1s"]
+prefixes = ["001e063e", "001e063f"]
+
+[boards.odroidm2]
+aliases = ["m2", "odroid-m2"]
+prefixes = ["001e062e", "001e062f"]

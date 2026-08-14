@@ -1,0 +1,62 @@
+{{define "pool.html"}}
+{{template "head" .}}
+
+<p class="back-link"><a href="/web/">&larr; All MAC pools</a></p>
+
+<section class="summary-grid">
+  <article class="summary"><span>Board</span><strong>{{.Pool.Board}}</strong></article>
+  <article class="summary"><span>Prefix</span><strong><code>{{.Pool.Prefix}}</code></strong></article>
+  <article class="summary range"><span>MAC range</span><strong><code>{{.Pool.RangeStart}} - {{.Pool.RangeEnd}}</code></strong></article>
+  <article class="summary"><span>Total</span><strong>{{.Pool.Total}}</strong></article>
+  <article class="summary free"><span>Free</span><strong>{{.Pool.Free}}</strong></article>
+  <article class="summary reserved"><span>Reserved</span><strong>{{.Pool.Reserved}}</strong></article>
+  <article class="summary assigned"><span>Assigned</span><strong>{{.Pool.Assigned}}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Allocation records</h2>
+      <p>Latest 500 matching records. Unallocated addresses are represented by Free and do not occupy database rows.</p>
+    </div>
+  </div>
+  <form class="filters" method="get" action="/web/pools/{{.Pool.Prefix}}">
+    <input name="q" value="{{.Query}}" placeholder="MAC or UUID">
+    <select name="state">
+      <option value="">All states</option>
+      <option value="reserved" {{if eq .State "reserved"}}selected{{end}}>Reserved</option>
+      <option value="assigned" {{if eq .State "assigned"}}selected{{end}}>Assigned</option>
+      <option value="released" {{if eq .State "released"}}selected{{end}}>Released</option>
+    </select>
+    <button type="submit">Search</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>MAC</th><th>UUID</th><th>State</th><th>Reserved</th><th>Assigned</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {{range .Allocations}}
+        <tr>
+          <td><code>{{.MAC}}</code></td><td><code>{{.UUID}}</code></td><td><span class="state {{.State}}">{{.State}}</span></td>
+          <td>{{.ReservedAt}}</td><td>{{.AssignedAt}}</td><td>{{.UpdatedAt}}</td>
+          <td>
+            {{if ne .State "released"}}
+            <form method="post" action="/web/release" onsubmit="return confirm('Release {{.MAC}}?')">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="board" value="{{.Board}}">
+              <input type="hidden" name="mac_addr" value="{{.MAC}}">
+              <input type="hidden" name="return_to" value="/web/pools/{{.Prefix}}">
+              <button class="danger" type="submit">Release</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="empty">No matching allocation records</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{template "footer" .}}
+{{end}}

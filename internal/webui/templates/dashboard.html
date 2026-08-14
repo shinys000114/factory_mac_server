@@ -1,0 +1,82 @@
+{{define "dashboard.html"}}
+{{template "head" .}}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>MAC pool allocation statistics</h2>
+      <p>Each pool has the fixed suffix range <code>0001-ffff</code>.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="/web/config">Edit TOML</a>
+      {{if .BackupDir}}
+      <form method="post" action="/web/backup">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="secondary">Create backup</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="pool-table">
+      <thead>
+        <tr>
+          <th>Board</th>
+          <th>Prefix</th>
+          <th>MAC range</th>
+          <th class="number">Total</th>
+          <th class="number">Free</th>
+          <th class="number">Reserved</th>
+          <th class="number">Assigned</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .PoolStats}}
+        <tr>
+          <td><a class="row-link" href="/web/pools/{{.Prefix}}">{{.Board}}</a></td>
+          <td><a class="row-link" href="/web/pools/{{.Prefix}}"><code>{{.Prefix}}</code></a></td>
+          <td><a class="row-link" href="/web/pools/{{.Prefix}}"><code>{{.RangeStart}} - {{.RangeEnd}}</code></a></td>
+          <td class="number"><a class="row-link" href="/web/pools/{{.Prefix}}">{{.Total}}</a></td>
+          <td class="number free"><a class="row-link" href="/web/pools/{{.Prefix}}">{{.Free}}</a></td>
+          <td class="number reserved"><a class="row-link" href="/web/pools/{{.Prefix}}">{{.Reserved}}</a></td>
+          <td class="number assigned"><a class="row-link" href="/web/pools/{{.Prefix}}">{{.Assigned}}</a></td>
+          <td><a class="text-link" href="/web/pools/{{.Prefix}}">View</a></td>
+        </tr>
+        {{else}}
+        <tr><td colspan="8" class="empty">No enabled MAC pools</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Recent audit log</h2>
+      <p>Latest configuration and allocation state changes.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Event</th><th>Board</th><th>MAC</th><th>UUID / Detail</th><th>Time</th></tr></thead>
+      <tbody>
+        {{range .Audit}}
+        <tr>
+          <td>{{.ID}}</td><td>{{.Event}}</td><td>{{.Board}}</td>
+          <td><code>{{.MAC}}</code></td>
+          <td><code>{{if .UUID}}{{.UUID}}{{else}}{{.Detail}}{{end}}</code></td>
+          <td>{{.CreatedAt}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="empty">No audit records</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{template "footer" .}}
+{{end}}
