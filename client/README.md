@@ -16,15 +16,9 @@ C 라이브러리입니다. `macctl`은 라이브러리 사용 예제이자 수�
 - `pkg-config`
 - libcurl 개발 파일
 
-저장소 루트에서 빌드:
-
 ```sh
-make client
-```
-
-`client` 디렉터리에서 직접 빌드:
-
-```sh
+git clone https://github.com/shinys000114/factory_mac_server.git
+cd factory_mac_server/client
 make             # 라이브러리와 macctl
 make library     # 라이브러리만
 make example     # macctl과 필요한 정적 라이브러리
