@@ -17,6 +17,8 @@ C 라이브러리입니다. `macctl`은 라이브러리 사용 예제이자 수�
 - libcurl 개발 파일
 
 ```sh
+sudo apt install libcurl4-openssl-dev pkg-config build-essential
+
 git clone https://github.com/shinys000114/factory_mac_server.git
 cd factory_mac_server/client
 make             # 라이브러리와 macctl
@@ -136,11 +138,60 @@ ID를 생성하거나 함수에 전달할 필요가 없습니다.
 포기하고 다른 작업을 시작하려면 `mac_client_init()`으로 객체를 다시
 초기화할 수 있습니다.
 
-직접 링크하는 예:
+빌드한 정적 라이브러리를 링크하는 예:
 
 ```sh
 cc -Iinclude app.c libmacclient.a $(pkg-config --libs libcurl) -o app
 ```
+
+### 소스 파일을 프로젝트에 직접 추가하는 경우
+
+`src/mac_client.c`와 `include/mac_client.h`를 프로젝트에 복사하여
+응용 프로그램과 함께 컴파일할 수도 있습니다. 이 경우 `libmacclient.a`나
+`libmacclient.so`를 별도로 빌드할 필요는 없지만, libcurl 개발 파일과
+`pkg-config`는 위의 빌드 방법과 동일하게 필요합니다.
+
+다음처럼 세 파일을 같은 디렉터리에 두고 `app.c`에서
+`#include "mac_client.h"`를 사용한다고 가정합니다.
+
+```text
+my_project/
+├── app.c
+├── mac_client.c
+└── mac_client.h
+```
+
+프로젝트 디렉터리에서 다음 명령으로 컴파일합니다.
+
+```sh
+cc -O2 -g -Wall -Wextra \
+  $(pkg-config --cflags libcurl) \
+  app.c mac_client.c \
+  $(pkg-config --libs libcurl) \
+  -o app
+```
+
+Makefile을 사용하는 경우에는 다음처럼 작성할 수 있습니다. 명령행 앞의
+들여쓰기는 탭 문자입니다.
+
+```makefile
+CC ?= cc
+CFLAGS ?= -O2 -g
+CFLAGS += -Wall -Wextra
+CPPFLAGS += $(shell pkg-config --cflags libcurl)
+LDLIBS += $(shell pkg-config --libs libcurl)
+
+app: app.o mac_client.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+app.o mac_client.o: mac_client.h
+```
+
+위 Makefile은 기본 규칙으로 각 `.c` 파일을 `.o` 파일로 컴파일하며,
+`make`를 실행하면 `app`이 생성됩니다. 기존 프로젝트에 통합할 때도
+`mac_client.c`를 컴파일 대상에 포함하고 libcurl 링크 옵션을 소스나
+오브젝트 파일 뒤에 지정합니다. 헤더를 별도 디렉터리에 두었다면
+`-I헤더_디렉터리`도 컴파일 옵션에 추가합니다.
 
 ## macctl
 
